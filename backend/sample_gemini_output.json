@@ -1,0 +1,27 @@
+{
+  "_comment": "Canonical example of the JSON Gemini returns from /api/triage extraction. Matches the ExtractedReport schema in main.py. The server adds `id` and `created_at` before storing; absent fields come back as the string \"n/a\" (coordinates as null).",
+  "example": {
+    "name": "Ana Müller",
+    "age": "30",
+    "urgency": 9,
+    "title": "Gas leak, two trapped in Berlin",
+    "summary": "A gas leak on Oak Street in Berlin has left two people trapped inside a building that is now on fire.",
+    "notes": "Two occupants reported trapped; active fire with possible explosion risk.",
+    "other_data": "Reporter is on-site and unharmed; requesting fire and rescue units.",
+    "location": "Oak Street, Berlin, Germany",
+    "lat": 52.52,
+    "lng": 13.405
+  },
+  "example_sparse_input": {
+    "name": "n/a",
+    "age": "n/a",
+    "urgency": 4,
+    "title": "Power outage downtown",
+    "summary": "A power outage has been reported in the downtown area.",
+    "notes": "n/a",
+    "other_data": "n/a",
+    "location": "n/a",
+    "lat": null,
+    "lng": null
+  }
+}
