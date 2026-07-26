@@ -26,6 +26,21 @@ const esc = (value) =>
       })[character],
   );
 
+// Accessors live at module scope so their identity is stable across renders.
+// Passing a fresh arrow function to <Globe> makes three-globe treat the
+// accessor as changed and re-evaluate it for every datum, rebuilding the whole
+// layer — on every single React render.
+const pointColor = (report) => colorForUrgency(report.urgency);
+const pointAltitude = (report) => 0.02 + (report.urgency / 10) * 0.25;
+const heatmapPointWeight = (report) => report.urgency / 2;
+const polygonCapColor = () => "rgba(255, 0, 68, 0.12)";
+const polygonSideColor = () => "rgba(255, 0, 68, 0.05)";
+const polygonStrokeColor = () => "#ff5a7a";
+const pointLabel = (report) =>
+  `<div class="tip"><b>Urgency ${report.urgency}/10 · ${esc(
+    report.location,
+  )}</b><br/>${esc(report.summary)}</div>`;
+
 export default function ResponderPage() {
   const [reports, setReports] = useState([]);
   const [features, setFeatures] = useState([]);
@@ -36,7 +51,13 @@ export default function ResponderPage() {
   const wrapRef = useRef();
   const activeNameRef = useRef(null);
   const throttleRef = useRef({ last: 0, timer: null });
+  const lastPayloadRef = useRef("");
   const [dims, setDims] = useState({ width: 800, height: 600 });
+  // react-globe.gl raycasts the scene every frame while pointer interaction is
+  // on, to drive hover labels. That cost lands on the main thread during a
+  // drag, which is exactly when the globe feels choppy — and a tooltip is
+  // useless mid-spin. Suspend it once a drag actually starts moving.
+  const [pointerInteraction, setPointerInteraction] = useState(true);
 
   useEffect(() => {
     fetch("/countries.geojson")
@@ -47,9 +68,20 @@ export default function ResponderPage() {
 
   useEffect(() => {
     let alive = true;
+    // The poll returns an identical payload most of the time. Re-setting state
+    // anyway hands <Globe> a new array every 4s, which rebuilds the points and
+    // heatmap layers and shows up as a periodic hitch. Only update on a real
+    // change. (After an optimistic resolve the cached key is stale, so the next
+    // poll still differs and re-syncs correctly.)
     const load = () =>
       getReports()
-        .then((data) => alive && setReports(data))
+        .then((data) => {
+          if (!alive) return;
+          const key = JSON.stringify(data);
+          if (key === lastPayloadRef.current) return;
+          lastPayloadRef.current = key;
+          setReports(data);
+        })
         .catch(() => {});
 
     load();
@@ -72,6 +104,39 @@ export default function ResponderPage() {
     return () => observer.disconnect();
   }, []);
 
+  // Suspend hover raycasting for the duration of a drag. Keyed on actual
+  // movement rather than pointerdown, so a plain click still selects a point.
+  useEffect(() => {
+    const element = wrapRef.current;
+    if (!element) return undefined;
+    let down = false;
+    let moved = false;
+
+    const onDown = () => {
+      down = true;
+      moved = false;
+    };
+    const onMove = () => {
+      if (!down || moved) return;
+      moved = true;
+      setPointerInteraction(false);
+    };
+    const onUp = () => {
+      down = false;
+      if (moved) setPointerInteraction(true);
+      moved = false;
+    };
+
+    element.addEventListener("pointerdown", onDown);
+    element.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      element.removeEventListener("pointerdown", onDown);
+      element.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
   // Cap the renderer pixel ratio. On Retina displays the globe otherwise
   // renders at 2x resolution (4x the fragments), which dominates GPU cost.
   // setPixelRatio re-applies the drawing-buffer size internally.
@@ -86,6 +151,20 @@ export default function ResponderPage() {
     () => reports.filter((report) => report.lat != null && report.lng != null),
     [reports],
   );
+
+  // Memoised so the heatmap layer isn't handed a fresh outer array — and so
+  // rebuilt — on every render.
+  const heatmapsData = useMemo(
+    () => (mappable.length ? [mappable] : []),
+    [mappable],
+  );
+
+  const polygonsData = useMemo(
+    () => (activeCountry ? [activeCountry] : []),
+    [activeCountry],
+  );
+
+  const handlePointClick = useCallback((report) => setSelected(report), []);
 
   const visible = useMemo(() => {
     const inRegion = activeCountry
@@ -281,10 +360,11 @@ export default function ResponderPage() {
           atmosphereColor="#3a7bd5"
           atmosphereAltitude={0.22}
           onZoom={handleZoom}
-          heatmapsData={mappable.length ? [mappable] : []}
+          enablePointerInteraction={pointerInteraction}
+          heatmapsData={heatmapsData}
           heatmapPointLat="lat"
           heatmapPointLng="lng"
-          heatmapPointWeight={(report) => report.urgency / 2}
+          heatmapPointWeight={heatmapPointWeight}
           heatmapBandwidth={0.9}
           heatmapColorSaturation={2.2}
           heatmapTopAltitude={0.28}
@@ -293,20 +373,18 @@ export default function ResponderPage() {
           pointsData={mappable}
           pointLat="lat"
           pointLng="lng"
-          pointColor={(report) => colorForUrgency(report.urgency)}
-          pointAltitude={(report) => 0.02 + (report.urgency / 10) * 0.25}
+          pointColor={pointColor}
+          pointAltitude={pointAltitude}
           pointRadius={0.22}
-          pointLabel={(report) =>
-            `<div class="tip"><b>Urgency ${report.urgency}/10 · ${esc(
-              report.location,
-            )}</b><br/>${esc(report.summary)}</div>`
-          }
-          onPointClick={(report) => setSelected(report)}
+          pointResolution={6}
+          pointsTransitionDuration={0}
+          pointLabel={pointLabel}
+          onPointClick={handlePointClick}
           pointsMerge={false}
-          polygonsData={activeCountry ? [activeCountry] : []}
-          polygonCapColor={() => "rgba(255, 0, 68, 0.12)"}
-          polygonSideColor={() => "rgba(255, 0, 68, 0.05)"}
-          polygonStrokeColor={() => "#ff5a7a"}
+          polygonsData={polygonsData}
+          polygonCapColor={polygonCapColor}
+          polygonSideColor={polygonSideColor}
+          polygonStrokeColor={polygonStrokeColor}
           polygonAltitude={0.012}
         />
 
