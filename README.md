@@ -19,20 +19,21 @@ Built with **FastAPI** and **React + Vite**.
 
 ## Screenshots
 
-Gemini Live voice mode on `/user` — the assistant listens, replies aloud, and
-hands the structured incident to responders mid-conversation.
+`/user` — where a reporter arrives: type a crisis report, or press the
+microphone to start a Gemini Live voice conversation.
 
-![Reporter view with Gemini Live voice mode](imgs/user_side.png)
+![Reporter landing view](imgs/user_home.png)
+
+Gemini Live voice mode — the assistant listens, replies aloud, and hands the
+structured incident to responders mid-conversation.
+
+![Reporter view with Gemini Live voice mode](imgs/user_side.gif)
 
 `/responder` — the live event feed beside the 3D globe. Red spikes are critical
-(urgency > 7), yellow are elevated.
+(urgency > 7), yellow are elevated. Zoom into a country to filter the feed, or
+select an event for its full AI summary and a Google Maps directions link.
 
-![Responder feed and 3D globe](imgs/responder_side.png)
-
-Selecting an event opens its full AI summary, extracted personal details, and a
-Google Maps directions link.
-
-![Event detail with AI summary](imgs/responder_detail.png)
+![Responder feed and 3D globe](imgs/responder_side.gif)
 
 `/news` — the local crisis briefing.
 
