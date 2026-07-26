@@ -13,6 +13,7 @@ export class LiveVoiceClient {
     onTurnComplete,
     onError,
     onClose,
+    onLatency,
   }) {
     this.url = url;
     this.callbacks = {
@@ -24,6 +25,7 @@ export class LiveVoiceClient {
       onTurnComplete,
       onError,
       onClose,
+      onLatency,
     };
     this.websocket = null;
     this.audioContext = null;
@@ -35,6 +37,45 @@ export class LiveVoiceClient {
     this.nextPlaybackTime = 0;
     this.recording = false;
     this.intentionalClose = false;
+
+    // Response-latency instrumentation. Each turn is timed from the last
+    // transcript chunk of the user's speech to the first byte of model audio
+    // played back — i.e. how long the person waits in silence before hearing a
+    // reply. Read the summary at any point with getLatencyStats().
+    this.turnStartedAt = null;
+    this.turnAudioSeen = false;
+    this.latencies = [];
+  }
+
+  /** Round-trip latency summary, in milliseconds, across the session. */
+  getLatencyStats() {
+    if (this.latencies.length === 0) return null;
+    const sorted = [...this.latencies].sort((a, b) => a - b);
+    const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+    return {
+      turns: sorted.length,
+      min: Math.round(sorted[0]),
+      p50: Math.round(at(0.5)),
+      p95: Math.round(at(0.95)),
+      max: Math.round(sorted[sorted.length - 1]),
+    };
+  }
+
+  recordTurnLatency() {
+    if (this.turnAudioSeen || this.turnStartedAt === null) return;
+    this.turnAudioSeen = true;
+    const ms = performance.now() - this.turnStartedAt;
+    this.latencies.push(ms);
+    this.callbacks.onLatency?.(ms, this.getLatencyStats());
+    console.info(
+      `[live-voice] time to first audio: ${Math.round(ms)}ms`,
+      this.getLatencyStats(),
+    );
+  }
+
+  resetTurnTimer() {
+    this.turnStartedAt = null;
+    this.turnAudioSeen = false;
   }
 
   async start() {
@@ -117,6 +158,7 @@ export class LiveVoiceClient {
 
       websocket.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
+          this.recordTurnLatency();
           this.playAudio(event.data);
           return;
         }
@@ -136,6 +178,12 @@ export class LiveVoiceClient {
           return;
         }
         if (message.type === "transcript") {
+          // The user's own speech is transcribed as they talk, so the newest
+          // user chunk is the closest client-side marker for "they stopped
+          // speaking". Keep advancing it until model audio arrives.
+          if (message.role === "user" && !this.turnAudioSeen) {
+            this.turnStartedAt = performance.now();
+          }
           this.callbacks.onTranscript?.(message);
           return;
         }
@@ -144,12 +192,15 @@ export class LiveVoiceClient {
           return;
         }
         if (message.type === "interrupted") {
+          // Barge-in: the turn was abandoned, so it is not a latency sample.
+          this.resetTurnTimer();
           this.clearPlayback();
           this.callbacks.onInterrupted?.();
           this.callbacks.onStatus?.("listening");
           return;
         }
         if (message.type === "turn_complete") {
+          this.resetTurnTimer();
           this.callbacks.onTurnComplete?.();
           this.callbacks.onStatus?.("listening");
           return;
