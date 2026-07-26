@@ -1,5 +1,7 @@
 # AI Crisis Triage Mapper
 
+My entry for the Google Student AI Hackathon.
+
 Two roles, three routes, and one live crisis picture:
 
 - **`/user`** — a reporter can type a crisis report or start a low-latency
@@ -14,6 +16,27 @@ The reporter and news views use the Neural Expressive visual system, while the
 responder view keeps the operational data dense and scannable.
 
 Built with **FastAPI** and **React + Vite**.
+
+## Screenshots
+
+Gemini Live voice mode on `/user` — the assistant listens, replies aloud, and
+hands the structured incident to responders mid-conversation.
+
+![Reporter view with Gemini Live voice mode](imgs/user_side.png)
+
+`/responder` — the live event feed beside the 3D globe. Red spikes are critical
+(urgency > 7), yellow are elevated.
+
+![Responder feed and 3D globe](imgs/responder_side.png)
+
+Selecting an event opens its full AI summary, extracted personal details, and a
+Google Maps directions link.
+
+![Event detail with AI summary](imgs/responder_detail.png)
+
+`/news` — the local crisis briefing.
+
+![Local news briefing](imgs/news_side.png)
 
 > **No API key? Typed reporting still works.** Without `GEMINI_API_KEY`, the
 > backend uses deterministic triage/support fallbacks. Gemini Live voice mode
